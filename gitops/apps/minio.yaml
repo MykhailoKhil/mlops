@@ -6,25 +6,29 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://charts.min.io/
+    # shortcut: upstream MinIO removed its public images, so we use frozen
+    # bitnamilegacy ones (no security updates); swap to a maintained S3 store before anything real
+    repoURL: registry-1.docker.io/bitnamicharts
     chart: minio
-    targetRevision: 5.4.0
+    targetRevision: 17.0.21
     helm:
       valuesObject:
+        global:
+          security:
+            allowInsecureImages: true
+        image:
+          repository: bitnamilegacy/minio
+        console:
+          image:
+            repository: bitnamilegacy/minio-object-browser
         mode: standalone
-        replicas: 1
         # lab-only credentials; replace with a Secret before anything real
-        rootUser: minioadmin
-        rootPassword: minioadmin123
+        auth:
+          rootUser: minioadmin
+          rootPassword: minioadmin123
+        defaultBuckets: mlflow
         persistence:
           size: 5Gi
-        resources:
-          requests:
-            memory: 256Mi
-        buckets:
-          - name: mlflow
-            policy: none
-            purge: false
   destination:
     server: https://kubernetes.default.svc
     namespace: mlops

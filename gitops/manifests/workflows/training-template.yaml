@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: training
+  namespace: mlops
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: main
+  ttlStrategy:
+    secondsAfterCompletion: 3600
+  templates:
+    - name: main
+      steps:
+        - - name: prepare
+            template: prepare
+        - - name: train
+            template: step
+            arguments:
+              parameters:
+                - name: step
+                  value: train
+                - name: run-id
+                  value: "{{steps.prepare.outputs.parameters.run-id}}"
+        - - name: register
+            template: step
+            arguments:
+              parameters:
+                - name: step
+                  value: register
+                - name: run-id
+                  value: "{{steps.prepare.outputs.parameters.run-id}}"
+
+    - name: prepare
+      container:
+        # loaded into kind with `kind load docker-image`; never pulled from a registry
+        image: mlops-train:dev
+        imagePullPolicy: IfNotPresent
+        command: [python, pipeline.py, prepare]
+      outputs:
+        parameters:
+          - name: run-id
+            valueFrom:
+              path: /tmp/run_id
+
+    - name: step
+      inputs:
+        parameters:
+          - name: step
+          - name: run-id
+      container:
+        image: mlops-train:dev
+        imagePullPolicy: IfNotPresent
+        command: [python, pipeline.py, "{{inputs.parameters.step}}", "{{inputs.parameters.run-id}}"]

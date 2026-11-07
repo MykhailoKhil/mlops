@@ -1,0 +1,9 @@
+# one training run from the WorkflowTemplate; create with `kubectl -n mlops create -f` (generateName)
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: training-run-
+  namespace: mlops
+spec:
+  workflowTemplateRef:
+    name: training

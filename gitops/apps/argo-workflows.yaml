@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: 2.0.18
+    helm:
+      valuesObject:
+        # shortcut: no UI server to save RAM on 8 GB; use `argo` CLI or kubectl; enable when we want the UI
+        server:
+          enabled: false
+        controller:
+          # run workflows in mlops only; the chart creates Role/RoleBinding there
+          workflowNamespaces:
+            - mlops
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+        workflow:
+          serviceAccount:
+            create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Workflow CRDs are too large for client-side apply
+      - ServerSideApply=true

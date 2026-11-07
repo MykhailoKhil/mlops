@@ -6,7 +6,7 @@ import mlflow
 import pandas as pd
 from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
-from sklearn.datasets import make_classification
+from sklearn.datasets import load_breast_cancer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
@@ -14,25 +14,21 @@ from sklearn.model_selection import train_test_split
 mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
 mlflow.set_experiment("classifier")
 
-N_FEATURES = 20
 MODEL_NAME = "classifier"
 ALIAS = "production"
-SEED = 42  # one seed for the whole dataset; drift checks must sample from it, never re-generate
+SEED = 42  # fixed split seed; drift checks must sample from this same dataset, never from a different one
 
 
 def prepare():
-    X, y = make_classification(
-        n_samples=5000, n_features=N_FEATURES, n_informative=10, random_state=SEED
-    )
-    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(N_FEATURES)])
-    df["target"] = y
+    df = load_breast_cancer(as_frame=True).frame  # real data, bundled with sklearn (no download)
+    y = df["target"]
     train, test = train_test_split(df, test_size=0.2, random_state=SEED, stratify=y)
     with mlflow.start_run(run_name="pipeline") as run:
         d = tempfile.mkdtemp()
         train.to_parquet(f"{d}/train.parquet")
         test.to_parquet(f"{d}/test.parquet")
         mlflow.log_artifacts(d, "data")
-        mlflow.log_params({"n_samples": len(df), "n_features": N_FEATURES, "seed": SEED})
+        mlflow.log_params({"dataset": "breast_cancer", "n_samples": len(df), "n_features": df.shape[1] - 1, "seed": SEED})
         # Argo reads this file as the step's output parameter
         open("/tmp/run_id", "w").write(run.info.run_id)
         print(f"run_id={run.info.run_id}")

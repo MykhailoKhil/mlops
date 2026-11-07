@@ -31,6 +31,9 @@ spec:
             # default only allows localhost + private IPs; in-cluster DNS names would get 403
             - --allowed-hosts=mlflow*,localhost*,127.0.0.1*
           env:
+            # jobs subsystem spawns a runner + 5 huey consumers (~1.5 GiB total); we only need tracking/registry
+            - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
+              value: "false"
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:

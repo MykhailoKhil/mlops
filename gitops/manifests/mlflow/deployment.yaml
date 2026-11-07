@@ -22,7 +22,8 @@ spec:
           args:
             - --host=0.0.0.0
             - --port=5000
-            - --backend-store-uri=postgresql://mlflow:$(DB_PASSWORD)@postgres-postgresql:5432/mlflow
+            # explicit driver: SQLAlchemy 2.1 defaults plain postgresql:// to psycopg v3, which we don't install
+            - --backend-store-uri=postgresql+psycopg2://mlflow:$(DB_PASSWORD)@postgres-postgresql:5432/mlflow
             - --artifacts-destination=s3://mlflow
             - --serve-artifacts
             # default only allows localhost + private IPs; in-cluster DNS names would get 403

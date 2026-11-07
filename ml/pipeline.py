@@ -4,6 +4,8 @@ import tempfile
 
 import mlflow
 import pandas as pd
+from mlflow import MlflowClient
+from mlflow.exceptions import MlflowException
 from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
@@ -13,6 +15,8 @@ mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:500
 mlflow.set_experiment("classifier")
 
 N_FEATURES = 20
+MODEL_NAME = "classifier"
+ALIAS = "production"
 SEED = 42  # one seed for the whole dataset; drift checks must sample from it, never re-generate
 
 
@@ -53,7 +57,24 @@ def train(run_id):
         print(f"trained run_id={run_id} accuracy={accuracy_score(y_test, pred):.4f}")
 
 
-STEPS = {"prepare": prepare, "train": train}
+def register(run_id):
+    client = MlflowClient()
+    accuracy = client.get_run(run_id).data.metrics["accuracy"]
+    version = mlflow.register_model(f"runs:/{run_id}/model", MODEL_NAME)
+    try:
+        current = client.get_model_version_by_alias(MODEL_NAME, ALIAS)
+        current_acc = client.get_run(current.run_id).data.metrics["accuracy"]
+    except MlflowException:  # no production alias yet
+        current, current_acc = None, -1.0
+    # strictly better, so re-registering an equal model does not churn the alias (and the GitOps PR)
+    if accuracy > current_acc:
+        client.set_registered_model_alias(MODEL_NAME, ALIAS, version.version)
+        print(f"promoted v{version.version} to {ALIAS} (accuracy {accuracy:.4f} > {current_acc:.4f})")
+    else:
+        print(f"v{version.version} registered, kept v{current.version} as {ALIAS} ({accuracy:.4f} <= {current_acc:.4f})")
+
+
+STEPS = {"prepare": prepare, "train": train, "register": register}
 
 if __name__ == "__main__":
     STEPS[sys.argv[1]](*sys.argv[2:])

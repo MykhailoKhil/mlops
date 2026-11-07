@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: mlops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          # built locally and loaded with `kind load docker-image`, not pulled from a registry
+          image: mlops-mlflow:dev
+          imagePullPolicy: IfNotPresent
+          command: ["mlflow", "server"]
+          args:
+            - --host=0.0.0.0
+            - --port=5000
+            - --backend-store-uri=postgresql://mlflow:$(DB_PASSWORD)@postgres-postgresql:5432/mlflow
+            - --artifacts-destination=s3://mlflow
+            - --serve-artifacts
+            # default only allows localhost + private IPs; in-cluster DNS names would get 403
+            - --allowed-hosts=mlflow*,localhost*,127.0.0.1*
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-postgresql
+                  key: password
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio:9000
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: root-user
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: root-password
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi

@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: serving
+  namespace: mlops
+spec:
+  selector:
+    matchLabels:
+      app: serving
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

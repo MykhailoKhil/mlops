@@ -15,7 +15,7 @@ mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:500
 mlflow.set_experiment("classifier")
 
 MODEL_NAME = "classifier"
-ALIAS = "production"
+ALIAS = "candidate"  # passed the quality gate; it only reaches prod when a PR pins its version in git
 SEED = 42  # fixed split seed; drift checks must sample from this same dataset, never from a different one
 
 
@@ -65,7 +65,7 @@ def register(run_id):
     # strictly better, so re-registering an equal model does not churn the alias (and the GitOps PR)
     if accuracy > current_acc:
         client.set_registered_model_alias(MODEL_NAME, ALIAS, version.version)
-        print(f"promoted v{version.version} to {ALIAS} (accuracy {accuracy:.4f} > {current_acc:.4f})")
+        print(f"v{version.version} is now {ALIAS} (accuracy {accuracy:.4f} > {current_acc:.4f})")
     else:
         print(f"v{version.version} registered, kept v{current.version} as {ALIAS} ({accuracy:.4f} <= {current_acc:.4f})")
 

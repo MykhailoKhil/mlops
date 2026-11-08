@@ -1,0 +1,41 @@
+name: promote-model
+
+# Run manually (Actions tab or `gh workflow run promote-model -f version=6`).
+# Opens a PR that pins the serving Deployment to a model registry version; merging it is the promotion.
+# Manual on purpose: GitHub-hosted runners cannot reach the MLflow running in the local kind cluster.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Model registry version to deploy (integer)
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump MODEL_VERSION and open a PR
+        env:
+          # via env, never interpolated into the script, so the input cannot inject shell
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+$ ]] || { echo "version must be an integer, got: $VERSION"; exit 1; }
+          F=gitops/manifests/serving/deployment.yaml
+          sed -i "/name: MODEL_VERSION/{n;s/value: \".*\"/value: \"$VERSION\"/;}" "$F"
+          if git diff --quiet; then echo "serving already pinned to v$VERSION"; exit 1; fi
+          BRANCH="promote-model-v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "promote: serve model v$VERSION"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Promote model to v$VERSION" \
+            --body "Pins serving to registry version $VERSION. Merging rolls it out via Argo CD; revert the merge to roll back."

@@ -21,6 +21,9 @@ spec:
           env:
             - name: MLFLOW_TRACKING_URI
               value: http://mlflow:5000
+            # bumped by the promote-model workflow's PR; this line is the promotion
+            - name: MODEL_VERSION
+              value: "5"
           ports:
             - name: http
               containerPort: 8000

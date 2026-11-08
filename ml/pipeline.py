@@ -16,6 +16,7 @@ mlflow.set_experiment("classifier")
 
 MODEL_NAME = "classifier"
 ALIAS = "candidate"  # passed the quality gate; it only reaches prod when a PR pins its version in git
+DRIFT_EXIT_CODE = 10  # distinct from 1 (any uncaught exception) so a crash is never mistaken for drift
 SEED = 42  # fixed split seed; drift checks must sample from this same dataset, never from a different one
 
 
@@ -70,7 +71,28 @@ def register(run_id):
         print(f"v{version.version} registered, kept v{current.version} as {ALIAS} ({accuracy:.4f} <= {current_acc:.4f})")
 
 
-STEPS = {"prepare": prepare, "train": train, "register": register}
+def drift(run_id, shift="0", n_shifted="5"):
+    from scipy.stats import ks_2samp  # scipy ships with scikit-learn
+
+    d = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="data")
+    ref = pd.read_parquet(f"{d}/train.parquet").drop(columns="target")
+    # same dataset, held-out rows: stands in for production traffic. Never generate "live" data
+    # separately (e.g. another random_state): that gives a different distribution and false drift.
+    live = pd.read_parquet(f"{d}/test.parquet").drop(columns="target")
+    cols = list(ref.columns)[: int(n_shifted)]
+    live[cols] = live[cols] + float(shift) * ref[cols].std()  # controlled shift, in reference std units
+    # Bonferroni: 30 tests at 0.05 would flag ~1.5 features by chance alone
+    alpha = 0.05 / ref.shape[1]
+    pvals = {c: ks_2samp(ref[c], live[c]).pvalue for c in ref.columns}
+    drifted = {c: p for c, p in pvals.items() if p < alpha}
+    print(f"drift: {len(drifted)}/{len(pvals)} features (alpha={alpha:.5f}, shift={shift} std on {len(cols)} features)")
+    for c, p in sorted(drifted.items(), key=lambda kv: kv[1]):
+        print(f"  {c}: p={p:.2e}")
+    if drifted:
+        sys.exit(DRIFT_EXIT_CODE)
+
+
+STEPS = {"prepare": prepare, "train": train, "register": register, "drift": drift}
 
 if __name__ == "__main__":
     STEPS[sys.argv[1]](*sys.argv[2:])

@@ -39,6 +39,10 @@ flowchart TB
 
   mlflow -.->|alias: candidate| action[GitHub Action<br/>promote-model]
   action -->|opens PR pinning MODEL_VERSION| repo
+
+  ci[GitHub Action<br/>build-images] -->|pushes arm64 images| ghcr[(GHCR)]
+  ci -->|opens PR with image tags| repo
+  ghcr -.->|pulled by the nodes| cluster
 ```
 
 ## Stack
@@ -52,7 +56,7 @@ flowchart TB
 | PostgreSQL / MinIO | MLflow metadata store / S3-compatible artifact store |
 | FastAPI | model serving |
 | kube-prometheus-stack | Prometheus, Grafana, ServiceMonitor |
-| GitHub Actions | model promotion PR |
+| GitHub Actions + GHCR | image builds and the model promotion PR |
 
 ## Repository layout
 
@@ -65,27 +69,24 @@ flowchart TB
 | `ml/serve.py` | the serving API |
 | `images/` | Dockerfiles for the MLflow, training and serving images |
 | `workflows/` | one-off runs of the training and drift workflows |
-| `.github/workflows/` | `promote-model`, the promotion PR |
+| `.github/workflows/` | `build-images` (images to GHCR, PR with tags) and `promote-model` (model version PR) |
 | `terraform/` | the same platform on AWS EKS, as code only (see [terraform/README.md](terraform/README.md)) |
 
 ## How to run it
 
 Requirements: Docker with at least 8 GB of memory (the platform uses about 5 GB), `kind`, `kubectl`, `helm`.
-Developed on Apple Silicon.
+The images are built for arm64 only, so use Apple Silicon or another arm64 machine. The first start is slow:
+the MLflow image alone took about three minutes to pull.
 
 0. **Prepare your fork.** Argo CD can only sync a repo it can read, so edit two things and push before you start:
    - `repoURL` in `cluster/root-app.yaml` and `gitops/apps/{mlflow,workflows,serving,dashboards}.yaml`: point them at your fork.
    - `MODEL_VERSION` in `gitops/manifests/serving/deployment.yaml`: this repo pins `"6"`, which exists only in the author's
      registry. On a fresh cluster the first trained model is version 1, so set it to `"1"`.
 
-1. **Create the cluster and build the images** (they are loaded into kind, not pulled from a registry):
+1. **Create the cluster.** The images are public on GHCR and the nodes pull them, so there is nothing to build:
 
    ```bash
    kind create cluster --name mlops-lab --config cluster/kind-config.yaml
-   docker build -t mlops-mlflow:dev images/mlflow
-   docker build -t mlops-train:v3 -f images/train/Dockerfile .
-   docker build -t mlops-serving:v2 -f images/serving/Dockerfile .
-   kind load docker-image mlops-mlflow:dev mlops-train:v3 mlops-serving:v2 --name mlops-lab
    ```
 
 2. **Install Argo CD and hand it the repo:**
@@ -159,13 +160,17 @@ Developed on Apple Silicon.
 - **`register` only nominates.** It sets the `candidate` alias when accuracy is strictly better; it never deploys.
 - **Drift test.** Kolmogorov–Smirnov per feature with a Bonferroni-corrected threshold (`0.05 / 30`), because 30 uncorrected
   tests flag about one or two features by chance on clean data.
-- **Image tags are pinned** (`v2`, `v3`). A rebuilt image under an unchanged tag does not trigger a rollout.
+- **Images ship through a PR too.** `build-images` builds the three images on a native arm64 runner and tags them with the
+  commit SHA, so a tag never changes under a running Deployment. It then opens a PR that points the manifests at them;
+  merging it is the rollout. It runs on changes to `images/` and `ml/`, or by hand: `gh workflow run build-images`.
 
 ## Known limitations
 
 - "Live" data for the drift check is simulated: held-out rows of the same dataset plus a controlled shift. The serving API
   does not log requests, so there is no real production sample yet.
 - Retraining on unchanged data reproduces the same model; the drift loop demonstrates the mechanism, not an improvement.
+- Images are arm64 only, and `build-images` pushes to the GHCR of whoever owns the repo, so a fork must run it once and
+  merge its PR before the manifests point at the fork's images.
 - `promote-model` is started by hand. GitHub-hosted runners cannot reach an MLflow running on a laptop.
 - Credentials (`minioadmin123`, `mlflow123`, `admin123`) are lab values in git. Use real secrets for anything else.
 - MinIO and Postgres use frozen `bitnamilegacy` images (upstream MinIO no longer publishes its public images),

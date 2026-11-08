@@ -28,7 +28,7 @@ spec:
 
     - name: drift-check
       container:
-        image: mlops-train:v3
+        image: ghcr.io/mykhailokhil/mlops-train:f2a8e66
         imagePullPolicy: IfNotPresent
         env:
           # via env, not interpolated into the shell string, so a parameter cannot inject commands

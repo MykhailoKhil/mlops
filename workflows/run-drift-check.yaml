@@ -1,0 +1,14 @@
+# one drift check with a simulated shift of 1.0 std on 5 features; create with `kubectl -n mlops create -f`
+# shift "0" = clean data (retrain skipped); anything that drifts triggers the training workflow
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: drift-check-
+  namespace: mlops
+spec:
+  workflowTemplateRef:
+    name: drift-retrain
+  arguments:
+    parameters:
+      - name: shift
+        value: "1.0"

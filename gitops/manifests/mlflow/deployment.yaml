@@ -16,7 +16,7 @@ spec:
       containers:
         - name: mlflow
           # built locally and loaded with `kind load docker-image`, not pulled from a registry
-          image: mlops-mlflow:dev
+          image: ghcr.io/mykhailokhil/mlops-mlflow:f2a8e66
           imagePullPolicy: IfNotPresent
           command: ["mlflow", "server"]
           args:

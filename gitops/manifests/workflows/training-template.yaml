@@ -33,7 +33,7 @@ spec:
     - name: prepare
       container:
         # loaded into kind with `kind load docker-image`; never pulled from a registry
-        image: mlops-train:dev
+        image: mlops-train:v3
         imagePullPolicy: IfNotPresent
         command: [python, pipeline.py, prepare]
       outputs:
@@ -48,6 +48,6 @@ spec:
           - name: step
           - name: run-id
       container:
-        image: mlops-train:dev
+        image: mlops-train:v3
         imagePullPolicy: IfNotPresent
         command: [python, pipeline.py, "{{inputs.parameters.step}}", "{{inputs.parameters.run-id}}"]

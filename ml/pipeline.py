@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import tempfile
 
@@ -74,6 +75,8 @@ def register(run_id):
 def drift(run_id, shift="0", n_shifted="5"):
     from scipy.stats import ks_2samp  # scipy ships with scikit-learn
 
+    if not re.fullmatch(r"[0-9a-f]{32}", run_id):  # an alias name such as "candidate": use that model's training data
+        run_id = MlflowClient().get_model_version_by_alias(MODEL_NAME, run_id).run_id
     d = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="data")
     ref = pd.read_parquet(f"{d}/train.parquet").drop(columns="target")
     # same dataset, held-out rows: stands in for production traffic. Never generate "live" data

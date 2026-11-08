@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: drift-retrain
+  namespace: mlops
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: main
+  ttlStrategy:
+    secondsAfterCompletion: 3600
+  arguments:
+    parameters:
+      - name: reference   # run id, or an alias name: then that model's training data is the reference
+        value: candidate
+      - name: shift       # simulated shift in reference std units; 0 = none (stand-in for real traffic)
+        value: "0"
+  templates:
+    - name: main
+      steps:
+        - - name: check
+            template: drift-check
+        - - name: retrain
+            templateRef:
+              name: training
+              template: main
+            # exit code 10 = drift. Any other non-zero code already failed the workflow in the check step.
+            when: "{{steps.check.outputs.parameters.exit-code}} == 10"
+
+    - name: drift-check
+      container:
+        image: mlops-train:v3
+        imagePullPolicy: IfNotPresent
+        env:
+          # via env, not interpolated into the shell string, so a parameter cannot inject commands
+          - name: REFERENCE
+            value: "{{workflow.parameters.reference}}"
+          - name: SHIFT
+            value: "{{workflow.parameters.shift}}"
+        command: [sh, -c]
+        # 0 (clean) and 10 (drift) are normal outcomes; anything else (crash, MLflow down) fails the step,
+        # so a broken check can never look like "no drift" or trigger a retrain
+        args:
+          - |
+            python pipeline.py drift "$REFERENCE" "$SHIFT" 5
+            rc=$?
+            printf '%s' "$rc" > /tmp/exit-code
+            [ "$rc" -eq 0 ] || [ "$rc" -eq 10 ]
+      outputs:
+        parameters:
+          - name: exit-code
+            valueFrom:
+              path: /tmp/exit-code

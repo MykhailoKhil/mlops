@@ -1,0 +1,86 @@
+name: build-images
+
+# Builds the three images for arm64, pushes them to GHCR tagged with the commit SHA, then opens a PR that
+# points the manifests at them. Merging that PR is what rolls the new images out through Argo CD.
+on:
+  push:
+    branches: [main]
+    paths: ["images/**", "ml/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  build:
+    # native arm64 runner: the cluster nodes are arm64, and this avoids slow QEMU emulation
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        include:
+          - { name: mlflow, context: images/mlflow, file: images/mlflow/Dockerfile }
+          - { name: train, context: ".", file: images/train/Dockerfile }
+          - { name: serving, context: ".", file: images/serving/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          TAG="${GITHUB_SHA::7}"
+          IMAGE="ghcr.io/${OWNER}/mlops-${{ matrix.name }}:${TAG}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          # the source label links the package to this repo
+          docker build --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t "$IMAGE" -f "${{ matrix.file }}" "${{ matrix.context }}"
+          docker push "$IMAGE"
+
+  pull-request:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the images are publicly pullable
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          TAG="${GITHUB_SHA::7}"
+          fail=0
+          for name in mlflow train serving; do
+            repo="${OWNER}/mlops-${name}"
+            token=$(curl -s "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token", ""))')
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${token}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${repo}/manifests/${TAG}")
+            if [ "$code" != 200 ]; then
+              echo "::error::ghcr.io/${repo}:${TAG} is not publicly pullable (HTTP ${code}). Set the package to Public in its settings, then re-run this job."
+              fail=1
+            fi
+          done
+          exit $fail
+      - name: Point the manifests at the new images and open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          TAG="${GITHUB_SHA::7}"
+          for name in mlflow train serving; do
+            while IFS= read -r f; do
+              sed -i "s#image: .*mlops-${name}:[A-Za-z0-9._-]*#image: ghcr.io/${OWNER}/mlops-${name}:${TAG}#" "$f"
+            done < <(grep -rl "mlops-${name}:" gitops)
+          done
+          if git diff --quiet; then echo "manifests already use ${TAG}"; exit 0; fi
+          BRANCH="images-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "build: images ${TAG}"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Roll out images ${TAG}" \
+            --body "Points mlflow, train and serving at the images built from ${GITHUB_SHA}. Merging rolls them out via Argo CD; revert the merge to roll back."

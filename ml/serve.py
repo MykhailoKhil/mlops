@@ -6,7 +6,7 @@ import mlflow
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from prometheus_client import Gauge
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from pydantic import BaseModel
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "classifier")
@@ -34,7 +34,11 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
-Instrumentator().instrument(app).expose(app)
+# default buckets (0.1/0.5/1s) are far too coarse for a model that answers in milliseconds, so p95 would
+# always read "under 0.1s"; probes are excluded so they do not dilute per-handler rates
+Instrumentator(excluded_handlers=["/metrics", "/healthz"]).add(
+    metrics.default(latency_lowr_buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5))
+).instrument(app).expose(app)
 
 
 class Request(BaseModel):

@@ -16,7 +16,7 @@ spec:
       containers:
         - name: serving
           # built locally and loaded with `kind load docker-image`, not pulled from a registry
-          image: mlops-serving:dev
+          image: mlops-serving:v2
           imagePullPolicy: IfNotPresent
           env:
             - name: MLFLOW_TRACKING_URI

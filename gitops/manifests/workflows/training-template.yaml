@@ -32,7 +32,7 @@ spec:
 
     - name: prepare
       container:
-        # loaded into kind with `kind load docker-image`; never pulled from a registry
+        # built and pushed by the build-images workflow; the tag is the commit SHA and a PR bumps it
         image: ghcr.io/mykhailokhil/mlops-train:f2a8e66
         imagePullPolicy: IfNotPresent
         command: [python, pipeline.py, prepare]

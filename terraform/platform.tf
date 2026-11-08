@@ -60,7 +60,7 @@ resource "aws_db_instance" "mlflow" {
   multi_az            = false
 }
 
-# --- images: ECR replaces `kind load docker-image` ---
+# --- images: a private registry option; the lab itself pulls public arm64 images from GHCR ---
 resource "aws_ecr_repository" "images" {
   for_each = toset(["mlops-mlflow", "mlops-train", "mlops-serving"])
 

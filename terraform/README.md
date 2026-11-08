@@ -11,7 +11,7 @@ it has not been planned or applied, so treat it as a reviewed draft, not a teste
 | EKS cluster with a managed node group on Graviton (arm64) | kind |
 | S3 bucket (private, versioned) | MinIO |
 | RDS PostgreSQL 17, password generated into Secrets Manager | in-cluster Postgres |
-| ECR repositories with immutable tags | `kind load docker-image` |
+| ECR repositories with immutable tags (a private registry option) | public GHCR images built by `build-images` |
 | IAM role bound to the `mlops/mlflow` ServiceAccount via EKS Pod Identity | MinIO root credentials |
 | Argo CD plus the root Application (via the `argocd-apps` chart) | `helm install` and `kubectl apply` |
 

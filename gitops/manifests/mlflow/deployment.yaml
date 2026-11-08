@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: mlflow
-          # built locally and loaded with `kind load docker-image`, not pulled from a registry
+          # built and pushed by the build-images workflow; the tag is the commit SHA and a PR bumps it
           image: ghcr.io/mykhailokhil/mlops-mlflow:f2a8e66
           imagePullPolicy: IfNotPresent
           command: ["mlflow", "server"]
